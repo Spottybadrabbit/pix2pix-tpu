@@ -23,17 +23,17 @@ def load_dataset(args, params):
         r = image
         if args.flip:
             r = tf.image.random_flip_left_right(r, seed=seed)
-        r = tf.image.resize_images(
+        r = tf.image.resize(
             r, [args.scale_size, args.scale_size], method=tf.image.ResizeMethod.AREA)
 
-        offset = tf.cast(tf.floor(tf.random_uniform(
+        offset = tf.cast(tf.math.floor(tf.random.uniform(
             [2], 0, args.scale_size - CROP_SIZE + 1, seed=seed)), dtype=tf.int32)
         r = tf.image.crop_to_bounding_box(
              r, offset[0], offset[1], CROP_SIZE, CROP_SIZE)
         return r
 
     def parser(filename):
-        img_file = tf.read_file(filename)
+        img_file = tf.io.read_file(filename)
         inp = tf.image.decode_image(img_file, channels=3)
         inp = tf.image.convert_image_dtype(inp, dtype=tf.float32)
         assertion = tf.assert_equal(
@@ -56,5 +56,6 @@ def load_dataset(args, params):
     dataset = dataset.map(parser)
     dataset = dataset.batch(args.batch_size, drop_remainder=True)
     
-    images, targets = dataset.make_one_shot_iterator().get_next()
+    #images, targets = dataset.make_one_shot_iterator().get_next()
+    images, targets = tf.compat.v1.data.make_one_shot_iterator(dataset).get_next()
     return images, targets

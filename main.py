@@ -19,9 +19,9 @@ from dataset import load_dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--data-dir", help="path to folder containing images")
-parser.add_argument("--mode", required=True, choices=["train", "test", "export"])
+parser.add_argument("--mode", required=True, choices=["train", "test", "export"], default="train")
 parser.add_argument("--output_dir", help="where to put output files")
-parser.add_argument("--seed", type=int)
+parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--checkpoint", default=None, help="directory with checkpoint to resume training from or use for testing")
 
 parser.add_argument("--max_steps", type=int, help="number of training steps (0 to disable)")
@@ -68,50 +68,55 @@ def model_fn(features, labels, mode, params):
     loss = get_loss(features, labels, args)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        learning_rate = tf.train.exponential_decay(
+        learning_rate = tf.compat.v1.train.exponential_decay(
             args.lr,
-            tf.train.get_global_step(),
+            tf.compat.v1.train.get_global_step(),
             decay_steps=100000,
             decay_rate=0.96)
 
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
+        optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=learning_rate)
 
         if args.use_tpu:
-            optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+            optimizer = tf.compat.v1.tpu.CrossShardOptimizer(optimizer)
 
-        return tf.contrib.tpu.TPUEstimatorSpec(
+        return tf.compat.v1.estimator.tpu.TPUEstimatorSpec(
             mode=mode,
             loss=loss,
-            train_op=optimizer.minimize(loss, tf.train.get_global_step()))
+            train_op=optimizer.minimize(loss, tf.compat.v1.train.get_global_step()))
 
 
 def set_random_seed():
     if args.seed is None:
         args.seed = random.randint(0, 2**31 - 1)
 
-    tf.set_random_seed(args.seed)
+    tf.random.set_seed(args.seed)
     np.random.seed(args.seed)
     random.seed(args.seed)
 
 def main(argv):
     set_random_seed()
-    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)
 
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+    """tpu_cluster_resolver = tf.cluster_resolver.TPUClusterResolver(
         args.tpu,
+        zone=args.tpu_zone,
+        project=args.gcp_project
+    )"""
+    tpu_cluster_resolver = tf.distribute.cluster_resolver.TPUClusterResolver(
+        tpu=args.tpu,
         zone=args.tpu_zone,
         project=args.gcp_project
     )
 
-    run_config = tf.contrib.tpu.RunConfig(
+    run_config = tf.compat.v1.estimator.tpu.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=args.model_dir,
-        session_config=tf.ConfigProto(
+        session_config=tf.compat.v1.ConfigProto(
             allow_soft_placement=True, log_device_placement=True),
-        tpu_config=tf.contrib.tpu.TPUConfig(args.iterations, args.num_shards),
+        tpu_config=tf.compat.v1.estimator.tpu.TPUConfig(args.iterations, args.num_shards),
     )
 
-    estimator = tf.contrib.tpu.TPUEstimator(
+    estimator = tf.compat.v1.estimator.tpu.TPUEstimator(
         model_fn=model_fn,
         use_tpu=args.use_tpu,
         train_batch_size=args.batch_size,
@@ -123,4 +128,4 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    tf.app.run()
+    tf.compat.v1.app.run()

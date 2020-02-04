@@ -5,19 +5,19 @@ EPS = 1e-12
 
 def discrim_conv(batch_input, out_channels, stride):
     padded_input = tf.pad(batch_input, [[0, 0], [1, 1], [1, 1], [0, 0]], mode="CONSTANT")
-    return tf.layers.conv2d(padded_input, out_channels, kernel_size=4, strides=(stride, stride), padding="valid", kernel_initializer=tf.random_normal_initializer(0, 0.02))
+    return tf.compat.v1.layers.conv2d(padded_input, out_channels, kernel_size=4, strides=(stride, stride), padding="valid", kernel_initializer=tf.random_normal_initializer(0, 0.02))
 
 
 def gen_conv(batch_input, out_channels):
     # [batch, in_height, in_width, in_channels] => [batch, out_height, out_width, out_channels]
     initializer = tf.random_normal_initializer(0, 0.02)
-    return tf.layers.conv2d(batch_input, out_channels, kernel_size=4, strides=(2, 2), padding="same", kernel_initializer=initializer)
+    return tf.compat.v1.layers.conv2d(batch_input, out_channels, kernel_size=4, strides=(2, 2), padding="same", kernel_initializer=initializer)
 
 
 def gen_deconv(batch_input, out_channels):
     # [batch, in_height, in_width, in_channels] => [batch, out_height, out_width, out_channels]
     initializer = tf.random_normal_initializer(0, 0.02)
-    return tf.layers.conv2d_transpose(batch_input, out_channels, kernel_size=4, strides=(2, 2), padding="same", kernel_initializer=initializer)
+    return tf.compat.v1.layers.conv2d_transpose(batch_input, out_channels, kernel_size=4, strides=(2, 2), padding="same", kernel_initializer=initializer)
 
 
 def lrelu(x, a):
@@ -33,14 +33,14 @@ def lrelu(x, a):
 
 
 def batchnorm(inputs):
-    return tf.layers.batch_normalization(inputs, axis=3, epsilon=1e-5, momentum=0.1, training=True, gamma_initializer=tf.random_normal_initializer(1.0, 0.02))
+    return tf.compat.v1.layers.batch_normalization(inputs, axis=3, epsilon=1e-5, momentum=0.1, training=True, gamma_initializer=tf.random_normal_initializer(1.0, 0.02))
 
 
 def create_generator(generator_inputs, generator_outputs_channels, args):
     layers = []
 
     # encoder_1: [batch, 256, 256, in_channels] => [batch, 128, 128, ngf]
-    with tf.variable_scope("encoder_1"):
+    with tf.compat.v1.variable_scope("encoder_1"):
         output = gen_conv(generator_inputs, args.ngf)
         layers.append(output)
 
@@ -62,7 +62,7 @@ def create_generator(generator_inputs, generator_outputs_channels, args):
     ]
 
     for out_channels in layer_specs:
-        with tf.variable_scope("encoder_%d" % (len(layers) + 1)):
+        with tf.compat.v1.variable_scope("encoder_%d" % (len(layers) + 1)):
             rectified = lrelu(layers[-1], 0.2)
             # [batch, in_height, in_width, in_channels] => [batch, in_height/2, in_width/2, out_channels]
             convolved = gen_conv(rectified, out_channels)
@@ -89,7 +89,7 @@ def create_generator(generator_inputs, generator_outputs_channels, args):
     num_encoder_layers = len(layers)
     for decoder_layer, (out_channels, dropout) in enumerate(layer_specs):
         skip_layer = num_encoder_layers - decoder_layer - 1
-        with tf.variable_scope("decoder_%d" % (skip_layer + 1)):
+        with tf.compat.v1.variable_scope("decoder_%d" % (skip_layer + 1)):
             if decoder_layer == 0:
                 # first decoder layer doesn't have skip connections
                 # since it is directly connected to the skip_layer
@@ -103,12 +103,12 @@ def create_generator(generator_inputs, generator_outputs_channels, args):
             output = batchnorm(output)
 
             if dropout > 0.0:
-                output = tf.nn.dropout(output, keep_prob=1 - dropout)
+                output = tf.nn.dropout(output, rate=1 - dropout)
 
             layers.append(output)
 
     # decoder_1: [batch, 128, 128, ngf * 2] => [batch, 256, 256, generator_outputs_channels]
-    with tf.variable_scope("decoder_1"):
+    with tf.compat.v1.variable_scope("decoder_1"):
         input = tf.concat([layers[-1], layers[0]], axis=3)
         rectified = tf.nn.relu(input)
         output = gen_deconv(rectified, generator_outputs_channels)
@@ -127,7 +127,7 @@ def get_loss(inputs, targets, args):
         input = tf.concat([discrim_inputs, discrim_targets], axis=3)
 
         # layer_1: [batch, 256, 256, in_channels * 2] => [batch, 128, 128, ndf]
-        with tf.variable_scope("layer_1"):
+        with tf.compat.v1.variable_scope("layer_1"):
             convolved = discrim_conv(input, args.ndf, stride=2)
             rectified = lrelu(convolved, 0.2)
             layers.append(rectified)
@@ -136,7 +136,7 @@ def get_loss(inputs, targets, args):
         # layer_3: [batch, 64, 64, ndf * 2] => [batch, 32, 32, ndf * 4]
         # layer_4: [batch, 32, 32, ndf * 4] => [batch, 31, 31, ndf * 8]
         for i in range(n_layers):
-            with tf.variable_scope("layer_%d" % (len(layers) + 1)):
+            with tf.compat.v1.variable_scope("layer_%d" % (len(layers) + 1)):
                 out_channels = args.ndf * min(2**(i + 1), 8)
                 stride = 1 if i == n_layers - 1 else 2  # last layer here has stride 1
                 convolved = discrim_conv(
@@ -146,26 +146,26 @@ def get_loss(inputs, targets, args):
                 layers.append(rectified)
 
         # layer_5: [batch, 31, 31, ndf * 8] => [batch, 30, 30, 1]
-        with tf.variable_scope("layer_%d" % (len(layers) + 1)):
+        with tf.compat.v1.variable_scope("layer_%d" % (len(layers) + 1)):
             convolved = discrim_conv(rectified, out_channels=1, stride=1)
             output = tf.sigmoid(convolved)
             layers.append(output)
 
         return layers[-1]
 
-    with tf.variable_scope("generator"):
+    with tf.compat.v1.variable_scope("generator"):
         out_channels = int(targets.get_shape()[-1])
         outputs = create_generator(inputs, out_channels, args)
 
     # create two copies of discriminator, one for real pairs and one for fake pairs
     # they share the same underlying variables
     with tf.name_scope("real_discriminator"):
-        with tf.variable_scope("discriminator"):
+        with tf.compat.v1.variable_scope("discriminator"):
             # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
             predict_real = create_discriminator(inputs, targets)
 
     with tf.name_scope("fake_discriminator"):
-        with tf.variable_scope("discriminator", reuse=True):
+        with tf.compat.v1.variable_scope("discriminator", reuse=True):
             # 2x [batch, height, width, channels] => [batch, 30, 30, 1]
             predict_fake = create_discriminator(inputs, outputs)
 
@@ -173,14 +173,14 @@ def get_loss(inputs, targets, args):
         # minimizing -tf.log will try to get inputs to 1
         # predict_real => 1
         # predict_fake => 0
-        discrim_loss = tf.reduce_mean(-(tf.log(predict_real + EPS) +
-                                        tf.log(1 - predict_fake + EPS)))
+        discrim_loss = tf.math.reduce_mean(-(tf.math.log(predict_real + EPS) +
+                                        tf.math.log(1 - predict_fake + EPS)))
 
     with tf.name_scope("generator_loss"):
         # predict_fake => 1
         # abs(targets - outputs) => 0
-        gen_loss_GAN = tf.reduce_mean(-tf.log(predict_fake + EPS))
-        gen_loss_L1 = tf.reduce_mean(tf.abs(targets - outputs))
+        gen_loss_GAN = tf.math.reduce_mean(-tf.math.log(predict_fake + EPS))
+        gen_loss_L1 = tf.math.reduce_mean(tf.math.abs(targets - outputs))
         gen_loss = gen_loss_GAN * args.gan_weight + gen_loss_L1 * args.l1_weight
 
     return gen_loss + discrim_loss
